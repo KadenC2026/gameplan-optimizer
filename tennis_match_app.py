@@ -1,80 +1,112 @@
-# tennis_match_app.py (updated with set win and feedback fix)
 import streamlit as st
-import pandas as pd
+import json
+import openai
 from datetime import datetime
+
+# 🔐 Set your API key
+openai.api_key = "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"
 
 st.set_page_config(page_title="Tennis Match Tracker", layout="wide")
 
-# Helper functions and session initialization remain the same (truncated here for brevity)
-# ...
+# --- Session state setup ---
+if 'step' not in st.session_state:
+    st.session_state.step = 'start'
+    st.session_state.match_info = {
+        'format': '',
+        'players': ['', '', '', ''],
+        'surface': '', 'speed': '', 'type': '',
+        'temp': '', 'humidity': '', 'conditions': '',
+        'server': 0
+    }
+    st.session_state.score = {'sets': [0, 0], 'games': [0, 0], 'points': [0, 0]}
+    st.session_state.stats = {
+        'players': [
+            { 'aces': 0, 'doubleFaults': 0, 'winners': 0, 'forcedErrors': 0, 'unforcedErrors': 0,
+              'totalPoints': 0, 'pointsWon': 0, 'rallyCounts': {'0-4': 0, '5-8': 0, '9+': 0}, 'netApproaches': 0 },
+            { 'aces': 0, 'doubleFaults': 0, 'winners': 0, 'forcedErrors': 0, 'unforcedErrors': 0,
+              'totalPoints': 0, 'pointsWon': 0, 'rallyCounts': {'0-4': 0, '5-8': 0, '9+': 0}, 'netApproaches': 0 }
+        ]
+    }
+    st.session_state.ai_feedback = ''
 
-# Match UI (existing content above this remains unchanged)
+# --- Functions ---
+def generate_feedback(stats):
+    prompt = f"""A tennis player just completed a match. Here are their stats:
+{json.dumps(stats, indent=2)}
 
-if st.form_submit_button("✅ Save Point"):
-    win_idx = st.session_state.players.index(winner)
-    lose_idx = 1 - win_idx
-    rally = st.session_state.rally_length
+Give feedback on strengths, weaknesses, and what they can improve next time."""
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message['content']
 
-    st.session_state.stats[win_idx]["tpw"] += 1
-    if rally <= 4:
-        st.session_state.stats[win_idx]["rally_0_4"] += 1
-    elif rally <= 8:
-        st.session_state.stats[win_idx]["rally_5_8"] += 1
-    else:
-        st.session_state.stats[win_idx]["rally_9+"] += 1
+# --- UI Logic ---
+if st.session_state.step == 'start':
+    st.title("🎾 Tennis Match Tracker")
+    if st.button("Start a Match"):
+        st.session_state.step = 'format'
 
-    if result == "Ace":
-        st.session_state.stats[win_idx]["aces"] += 1
-    elif result == "Winner":
-        st.session_state.stats[win_idx]["winners"] += 1
-    elif result == "Unforced Error":
-        st.session_state.stats[lose_idx]["ue"] += 1
-    elif result == "Forced Error":
-        st.session_state.stats[lose_idx]["fe"] += 1
+elif st.session_state.step == 'format':
+    st.header("Choose Match Format")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Singles"):
+            st.session_state.match_info['format'] = 'singles'
+            st.session_state.step = 'enterPlayers'
+    with col2:
+        if st.button("Doubles"):
+            st.session_state.match_info['format'] = 'doubles'
+            st.session_state.step = 'enterPlayers'
 
-    if st.session_state.serve == "First":
-        st.session_state.stats[server]["1st_serves"] += 1
-        st.session_state.stats[server]["1st_won"] += int(win_idx == server)
-        st.session_state.stats[lose_idx]["returns_1st"][1] += 1
-        st.session_state.stats[lose_idx]["returns_1st"][0] += int(win_idx == lose_idx)
-    else:
-        st.session_state.stats[server]["2nd_serves"] += 1
-        st.session_state.stats[server]["2nd_won"] += int(win_idx == server)
-        st.session_state.stats[lose_idx]["returns_2nd"][1] += 1
-        st.session_state.stats[lose_idx]["returns_2nd"][0] += int(win_idx == lose_idx)
+elif st.session_state.step == 'enterPlayers':
+    st.header("Enter Player and Court Info")
+    n = 2 if st.session_state.match_info['format'] == 'singles' else 4
+    for i in range(n):
+        st.session_state.match_info['players'][i] = st.text_input(f"Player {i+1}", key=f"p{i}")
 
-    # Update game score
-    st.session_state.points[win_idx] += 1
-    if st.session_state.points[win_idx] >= 4 and st.session_state.points[win_idx] - st.session_state.points[lose_idx] >= 2:
-        st.session_state.games[win_idx] += 1
-        st.session_state.points = [0, 0]
-        st.session_state.server = get_next_server(server, st.session_state.is_doubles)
+    st.session_state.match_info['surface'] = st.selectbox("Court Surface", ['hard', 'clay', 'grass'])
+    st.session_state.match_info['speed'] = st.selectbox("Court Speed", ['slow', 'neutral', 'fast'])
+    st.session_state.match_info['type'] = st.selectbox("Court Type", ['indoor', 'outdoor'])
+    st.session_state.match_info['temp'] = st.text_input("Temperature (°C)")
+    st.session_state.match_info['humidity'] = st.text_input("Humidity (%)")
+    st.session_state.match_info['conditions'] = st.text_input("Other Conditions")
 
-        # Check for set win
-        g1, g2 = st.session_state.games
-        if g1 >= 6 and g1 - g2 >= 2:
-            st.session_state.sets[st.session_state.current_set][0] += 1
-            st.session_state.games = [0, 0]
-            st.session_state.current_set += 1 if st.session_state.current_set < 3 else 0
-        elif g2 >= 6 and g2 - g1 >= 2:
-            st.session_state.sets[st.session_state.current_set][1] += 1
-            st.session_state.games = [0, 0]
-            st.session_state.current_set += 1 if st.session_state.current_set < 3 else 0
+    if st.button("Start Match"):
+        st.session_state.step = 'match'
 
-    st.rerun()
+elif st.session_state.step == 'match':
+    st.header(f"Match in Progress - {datetime.today().strftime('%Y-%m-%d')}")
+    st.subheader("Scores")
+    cols = st.columns(2)
+    for i in [0, 1]:
+        with cols[i]:
+            st.write(f"{st.session_state.match_info['players'][i] or f'Player {i+1}'}")
+            st.write(f"Sets: {st.session_state.score['sets'][i]} | Games: {st.session_state.score['games'][i]} | Points: {st.session_state.score['points'][i]}")
+            if st.button(f"+ Point for Player {i+1}", key=f"pt{i}"):
+                st.session_state.stats['players'][i]['pointsWon'] += 1
+                st.session_state.stats['players'][i]['totalPoints'] += 1
+                st.session_state.step = 'logPoint'
 
-if st.button("🔚 End Match and Generate AI Feedback"):
-    winner = get_set_winner(st.session_state.sets)
-    summary = f"🏆 Winner: {st.session_state.players[winner]}\n\n" if winner is not None else "Match not yet decided.\n\n"
-    for i in range(2):
-        stats = st.session_state.stats[i]
-        summary += f"\n**{st.session_state.players[i]} Stats**\n"
-        summary += f"- Aces: {stats['aces']}\n- Double Faults: {stats['dfs']}\n- Winners: {stats['winners']}\n- Unforced Errors: {stats['ue']}\n- Forced Errors: {stats['fe']}\n"
-        summary += f"- 1st Serve %: {stats['1st_won']}/{stats['1st_serves']}\n"
-        summary += f"- 2nd Serve %: {stats['2nd_won']}/{stats['2nd_serves']}\n"
-        summary += f"- Return 1st %: {stats['returns_1st'][0]}/{stats['returns_1st'][1]}\n"
-        summary += f"- Return 2nd %: {stats['returns_2nd'][0]}/{stats['returns_2nd'][1]}\n"
-        summary += f"- Total Points Won: {stats['tpw']}\n"
-        summary += f"- Rallies 0–4: {stats['rally_0_4']} | 5–8: {stats['rally_5_8']} | 9+: {stats['rally_9+']}\n"
+    st.write("""---""")
+    if st.button("End Match and Generate Feedback"):
+        st.session_state.ai_feedback = generate_feedback(st.session_state.stats)
+        st.session_state.step = 'feedback'
 
-    st.text_area("📊 Match Summary and Feedback", summary, height=400)
+elif st.session_state.step == 'logPoint':
+    st.subheader("Log Point Outcome")
+    st.radio("Point Outcome", ['Ace', 'Winner', 'Unforced Error', 'Forced Error'], key='outcome')
+    st.slider("Rally Length", 0, 100, 5, key='rally')
+    st.checkbox("Player 1 Came to Net", key='net1')
+    st.checkbox("Player 2 Came to Net", key='net2')
+    if st.button("Save Point"):
+        st.session_state.step = 'match'
+    if st.button("Cancel"):
+        st.session_state.step = 'match'
+
+elif st.session_state.step == 'feedback':
+    st.title("🧠 AI Match Feedback")
+    st.markdown(st.session_state.ai_feedback)
+    if st.button("Start Over"):
+        for key in st.session_state.keys():
+            del st.session_state[key]
