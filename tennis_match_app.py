@@ -1,112 +1,54 @@
+import numpy as np
 import streamlit as st
-import json
-import openai
-from datetime import datetime
 
-# 🔐 Set your API key
-openai.api_key = "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"
+# Define strategies
+player_strategies = ["Serve Wide", "Serve T", "Approach Net", "Baseline Rally"]
 
-st.set_page_config(page_title="Tennis Match Tracker", layout="wide")
+# Example probabilities based on known tennis strategy outcomes in balanced matchups
+# These can be calibrated with real data or player stats
+strategy_effectiveness = {
+    "Serve Wide": {"first_serve_win%": 0.68, "second_serve_win%": 0.52},
+    "Serve T": {"first_serve_win%": 0.65, "second_serve_win%": 0.49},
+    "Approach Net": {"net_point_win%": 0.62, "passing_shot_defense%": 0.4},
+    "Baseline Rally": {"baseline_win%": 0.55, "error_rate": 0.15}
+}
 
-# --- Session state setup ---
-if 'step' not in st.session_state:
-    st.session_state.step = 'start'
-    st.session_state.match_info = {
-        'format': '',
-        'players': ['', '', '', ''],
-        'surface': '', 'speed': '', 'type': '',
-        'temp': '', 'humidity': '', 'conditions': '',
-        'server': 0
-    }
-    st.session_state.score = {'sets': [0, 0], 'games': [0, 0], 'points': [0, 0]}
-    st.session_state.stats = {
-        'players': [
-            { 'aces': 0, 'doubleFaults': 0, 'winners': 0, 'forcedErrors': 0, 'unforcedErrors': 0,
-              'totalPoints': 0, 'pointsWon': 0, 'rallyCounts': {'0-4': 0, '5-8': 0, '9+': 0}, 'netApproaches': 0 },
-            { 'aces': 0, 'doubleFaults': 0, 'winners': 0, 'forcedErrors': 0, 'unforcedErrors': 0,
-              'totalPoints': 0, 'pointsWon': 0, 'rallyCounts': {'0-4': 0, '5-8': 0, '9+': 0}, 'netApproaches': 0 }
-        ]
-    }
-    st.session_state.ai_feedback = ''
+def compute_expected_value(strategy, serve_strength, baseline_consistency, opponent_defense):
+    if strategy == "Serve Wide" or strategy == "Serve T":
+        first_serve_ev = serve_strength * strategy_effectiveness[strategy]["first_serve_win%"]
+        second_serve_ev = (1 - serve_strength) * strategy_effectiveness[strategy]["second_serve_win%"]
+        return round(first_serve_ev + second_serve_ev, 3)
+    elif strategy == "Approach Net":
+        win_prob = strategy_effectiveness[strategy]["net_point_win%"] * (1 - opponent_defense)
+        return round(win_prob, 3)
+    elif strategy == "Baseline Rally":
+        win_prob = strategy_effectiveness[strategy]["baseline_win%"] + 0.1 * (baseline_consistency - strategy_effectiveness[strategy]["error_rate"])
+        return round(win_prob, 3)
+    return 0.0
 
-# --- Functions ---
-def generate_feedback(stats):
-    prompt = f"""A tennis player just completed a match. Here are their stats:
-{json.dumps(stats, indent=2)}
+# Streamlit App
+st.title("🎾 GamePlan Optimizer - Real-Time Strategy Advisor")
+st.markdown("Estimate the optimal tennis strategy using real-world probabilities based on your style and your opponent’s tendencies.")
 
-Give feedback on strengths, weaknesses, and what they can improve next time."""
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return response.choices[0].message['content']
+st.header("🧍 Your Player Profile")
+serve_strength = st.slider("1st Serve Accuracy (%)", 0.0, 1.0, 0.65, 0.01)
+baseline_consistency = st.slider("Baseline Rally Consistency (1 - Error Rate)", 0.0, 1.0, 0.85, 0.01)
 
-# --- UI Logic ---
-if st.session_state.step == 'start':
-    st.title("🎾 Tennis Match Tracker")
-    if st.button("Start a Match"):
-        st.session_state.step = 'format'
+st.header("🎯 Opponent Profile")
+opponent_defense = st.slider("Opponent Net Defense Skill (0 = weak, 1 = strong)", 0.0, 1.0, 0.5, 0.01)
 
-elif st.session_state.step == 'format':
-    st.header("Choose Match Format")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Singles"):
-            st.session_state.match_info['format'] = 'singles'
-            st.session_state.step = 'enterPlayers'
-    with col2:
-        if st.button("Doubles"):
-            st.session_state.match_info['format'] = 'doubles'
-            st.session_state.step = 'enterPlayers'
+if st.button("📈 Suggest Optimal Strategy"):
+    results = []
+    for strategy in player_strategies:
+        ev = compute_expected_value(strategy, serve_strength, baseline_consistency, opponent_defense)
+        results.append((strategy, ev))
 
-elif st.session_state.step == 'enterPlayers':
-    st.header("Enter Player and Court Info")
-    n = 2 if st.session_state.match_info['format'] == 'singles' else 4
-    for i in range(n):
-        st.session_state.match_info['players'][i] = st.text_input(f"Player {i+1}", key=f"p{i}")
+    sorted_results = sorted(results, key=lambda x: x[1], reverse=True)
+    best_strategy, best_ev = sorted_results[0]
 
-    st.session_state.match_info['surface'] = st.selectbox("Court Surface", ['hard', 'clay', 'grass'])
-    st.session_state.match_info['speed'] = st.selectbox("Court Speed", ['slow', 'neutral', 'fast'])
-    st.session_state.match_info['type'] = st.selectbox("Court Type", ['indoor', 'outdoor'])
-    st.session_state.match_info['temp'] = st.text_input("Temperature (°C)")
-    st.session_state.match_info['humidity'] = st.text_input("Humidity (%)")
-    st.session_state.match_info['conditions'] = st.text_input("Other Conditions")
+    st.success(f"**Best Strategy:** {best_strategy}")
+    st.metric(label="Expected Point Win Probability", value=f"{best_ev:.2f}")
 
-    if st.button("Start Match"):
-        st.session_state.step = 'match'
-
-elif st.session_state.step == 'match':
-    st.header(f"Match in Progress - {datetime.today().strftime('%Y-%m-%d')}")
-    st.subheader("Scores")
-    cols = st.columns(2)
-    for i in [0, 1]:
-        with cols[i]:
-            st.write(f"{st.session_state.match_info['players'][i] or f'Player {i+1}'}")
-            st.write(f"Sets: {st.session_state.score['sets'][i]} | Games: {st.session_state.score['games'][i]} | Points: {st.session_state.score['points'][i]}")
-            if st.button(f"+ Point for Player {i+1}", key=f"pt{i}"):
-                st.session_state.stats['players'][i]['pointsWon'] += 1
-                st.session_state.stats['players'][i]['totalPoints'] += 1
-                st.session_state.step = 'logPoint'
-
-    st.write("""---""")
-    if st.button("End Match and Generate Feedback"):
-        st.session_state.ai_feedback = generate_feedback(st.session_state.stats)
-        st.session_state.step = 'feedback'
-
-elif st.session_state.step == 'logPoint':
-    st.subheader("Log Point Outcome")
-    st.radio("Point Outcome", ['Ace', 'Winner', 'Unforced Error', 'Forced Error'], key='outcome')
-    st.slider("Rally Length", 0, 100, 5, key='rally')
-    st.checkbox("Player 1 Came to Net", key='net1')
-    st.checkbox("Player 2 Came to Net", key='net2')
-    if st.button("Save Point"):
-        st.session_state.step = 'match'
-    if st.button("Cancel"):
-        st.session_state.step = 'match'
-
-elif st.session_state.step == 'feedback':
-    st.title("🧠 AI Match Feedback")
-    st.markdown(st.session_state.ai_feedback)
-    if st.button("Start Over"):
-        for key in st.session_state.keys():
-            del st.session_state[key]
+    st.subheader("All Strategies Evaluated:")
+    for strat, val in sorted_results:
+        st.write(f"- **{strat}**: {val:.2f}")
