@@ -1,42 +1,54 @@
 import numpy as np
 import streamlit as st
 
-# Define sample strategies and outcomes
+# Define strategies
 player_strategies = ["Serve Wide", "Serve T", "Approach Net", "Baseline Rally"]
-opponent_weaknesses = ["Backhand", "Low Balls", "Passing Shots", "Forehand"]
 
-# Payoff matrix: expected win probability of each player strategy vs opponent weakness
-# Rows: player strategies, Columns: opponent weaknesses
-payoff_matrix = np.array([
-    [0.7, 0.6, 0.4, 0.5],  # Serve Wide
-    [0.6, 0.5, 0.3, 0.7],  # Serve T
-    [0.4, 0.8, 0.6, 0.5],  # Approach Net
-    [0.5, 0.4, 0.3, 0.6]   # Baseline Rally
-])
+# Example probabilities based on known tennis strategy outcomes in balanced matchups
+# These can be calibrated with real data or player stats
+strategy_effectiveness = {
+    "Serve Wide": {"first_serve_win%": 0.68, "second_serve_win%": 0.52},
+    "Serve T": {"first_serve_win%": 0.65, "second_serve_win%": 0.49},
+    "Approach Net": {"net_point_win%": 0.62, "passing_shot_defense%": 0.4},
+    "Baseline Rally": {"baseline_win%": 0.55, "error_rate": 0.15}
+}
 
-def recommend_strategy(weakness_profile):
-    """
-    weakness_profile: list of floats representing opponent weaknesses [0 to 1]
-    Each entry corresponds to the columns in payoff_matrix
-    """
-    # Convert weakness profile into a column vector
-    weakness_vector = np.array(weakness_profile)
-    # Compute expected values for each strategy
-    expected_values = payoff_matrix @ weakness_vector
-    # Select the best strategy
-    best_index = np.argmax(expected_values)
-    return player_strategies[best_index], expected_values[best_index]
+def compute_expected_value(strategy, serve_strength, baseline_consistency, opponent_defense):
+    if strategy == "Serve Wide" or strategy == "Serve T":
+        first_serve_ev = serve_strength * strategy_effectiveness[strategy]["first_serve_win%"]
+        second_serve_ev = (1 - serve_strength) * strategy_effectiveness[strategy]["second_serve_win%"]
+        return round(first_serve_ev + second_serve_ev, 3)
+    elif strategy == "Approach Net":
+        win_prob = strategy_effectiveness[strategy]["net_point_win%"] * (1 - opponent_defense)
+        return round(win_prob, 3)
+    elif strategy == "Baseline Rally":
+        win_prob = strategy_effectiveness[strategy]["baseline_win%"] + 0.1 * (baseline_consistency - strategy_effectiveness[strategy]["error_rate"])
+        return round(win_prob, 3)
+    return 0.0
 
-# Streamlit Web App
-st.title("🎾 GamePlan Optimizer")
-st.markdown("Rate your opponent's weaknesses from 0 (not a weakness) to 1 (very weak).")
+# Streamlit App
+st.title("🎾 GamePlan Optimizer - Real-Time Strategy Advisor")
+st.markdown("Estimate the optimal tennis strategy using real-world probabilities based on your style and your opponent’s tendencies.")
 
-weakness_input = []
-for w in opponent_weaknesses:
-    val = st.slider(f"{w}", 0.0, 1.0, 0.5, 0.05)
-    weakness_input.append(val)
+st.header("🧍 Your Player Profile")
+serve_strength = st.slider("1st Serve Accuracy (%)", 0.0, 1.0, 0.65, 0.01)
+baseline_consistency = st.slider("Baseline Rally Consistency (1 - Error Rate)", 0.0, 1.0, 0.85, 0.01)
 
-if st.button("Suggest Optimal Strategy"):
-    strategy, value = recommend_strategy(weakness_input)
-    st.success(f"Recommended Strategy: **{strategy}**")
-    st.metric(label="Expected Point Win Probability", value=f"{value:.2f}")
+st.header("🎯 Opponent Profile")
+opponent_defense = st.slider("Opponent Net Defense Skill (0 = weak, 1 = strong)", 0.0, 1.0, 0.5, 0.01)
+
+if st.button("📈 Suggest Optimal Strategy"):
+    results = []
+    for strategy in player_strategies:
+        ev = compute_expected_value(strategy, serve_strength, baseline_consistency, opponent_defense)
+        results.append((strategy, ev))
+
+    sorted_results = sorted(results, key=lambda x: x[1], reverse=True)
+    best_strategy, best_ev = sorted_results[0]
+
+    st.success(f"**Best Strategy:** {best_strategy}")
+    st.metric(label="Expected Point Win Probability", value=f"{best_ev:.2f}")
+
+    st.subheader("All Strategies Evaluated:")
+    for strat, val in sorted_results:
+        st.write(f"- **{strat}**: {val:.2f}")
