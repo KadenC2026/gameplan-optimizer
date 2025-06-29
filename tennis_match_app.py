@@ -4,7 +4,7 @@ import openai
 from datetime import datetime
 
 # 🔐 Set your API key
-openai.api_key = "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"
+openai.api_key = "Fakekey"
 
 st.set_page_config(page_title="Tennis Match Tracker", layout="wide")
 
