@@ -63,7 +63,7 @@ if st.form_submit_button("✅ Save Point"):
 
         st.rerun()
 
-    if st.button("🔚 End Match and Generate AI Feedback"):
+if st.button("🔚 End Match and Generate AI Feedback"):
         winner = get_set_winner(st.session_state.sets)
         summary = f"🏆 Winner: {st.session_state.players[winner]}\n\n" if winner is not None else "Match not yet decided.\n\n"
         for i in range(2):
