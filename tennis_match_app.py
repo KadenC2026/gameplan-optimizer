@@ -10,7 +10,7 @@ st.set_page_config(page_title="Tennis Match Tracker", layout="wide")
 
 # Match UI (existing content above this remains unchanged)
 
-    if st.form_submit_button("✅ Save Point"):
+if st.form_submit_button("✅ Save Point"):
         win_idx = st.session_state.players.index(winner)
         lose_idx = 1 - win_idx
         rally = st.session_state.rally_length
